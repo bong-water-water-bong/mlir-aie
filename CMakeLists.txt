@@ -111,11 +111,11 @@ else()
 endif()
 option(AIE_BUILD_CHESS_CLANG "Build chess-clang (requires Vitis chess toolchain)" ${_AIE_BUILD_CHESS_CLANG_DEFAULT})
 
-find_package(Vitis 2023.2 COMPONENTS ${AIE_VITIS_COMPONENTS})
+find_package(Vitis 2023.2 COMPONENTS ${AIE_VITIS_COMPONENTS} QUIET)
 configure_file(./utils/vitisVariables.config.in
                ${CMAKE_BINARY_DIR}/utils/vitisVariables.config @ONLY)
-find_package(XRT)
-find_package(hsa-runtime64)
+find_package(XRT QUIET)
+find_package(hsa-runtime64 QUIET)
 
 # Find AIEBU library for direct ELF generation (optional, falls back to subprocess)
 find_package(aiebu QUIET NO_DEFAULT_PATH
@@ -348,10 +348,10 @@ endif()
 
 
 # Last because each of these has its own CMakeLists.txt which reloads/re-finds LLVM, thus resettings globals.
-add_subdirectory(programming_examples)
-add_subdirectory(programming_guide)
-add_subdirectory(test)
-add_subdirectory(mlir_exercises)
+# add_subdirectory(programming_examples)
+# add_subdirectory(programming_guide)
+# add_subdirectory(test)
+# add_subdirectory(mlir_exercises) # disabled — needs AIE python bindings
 add_subdirectory(cmake/modules)
 
 get_filename_component(COMPILER_DIRECTORY ${CMAKE_CXX_COMPILER} DIRECTORY)
