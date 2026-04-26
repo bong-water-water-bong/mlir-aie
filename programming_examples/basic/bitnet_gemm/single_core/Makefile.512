@@ -1,0 +1,90 @@
+##===- Makefile.512 ------------------------------------------------------===##
+#
+# This file licensed under the Apache License v2.0 with LLVM Exceptions.
+# See https://llvm.org/LICENSE.txt for license information.
+# SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+#
+# Copyright (C) 2026, halo-ai-core / bong-water-water-bong.
+#
+# Phase-2 build: M=K=N=512, single AIE2P core, inner tile m=k=n=64.
+# Author: bitnet_gemm_512.cc + bitnet_gemm_iron_512.py.
+# Does NOT touch the Phase-1 (M=K=N=64) build.
+#
+# Usage:
+#   source /home/bcloud/.venvs/ironenv/bin/activate
+#   source /home/bcloud/repos/mlir-aie/utils/env_setup.sh /home/bcloud/repos/mlir-aie/install
+#   make -f Makefile.512
+#   python run_pyxrt_bitnet_512.py
+#
+##===---------------------------------------------------------------------===##
+
+srcdir := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+
+# Final GEMM dims (Phase-2: 512x512x512).
+M ?= 512
+K ?= 512
+N ?= 512
+
+# Single AIE core inner tile.
+m ?= 64
+k ?= 64
+n ?= 64
+
+devicename ?= npu2
+target_suffix ?= 512_${M}x${K}x${N}_${m}x${k}x${n}
+
+mlir_target   ?= build/aie_${target_suffix}.mlir
+xclbin_target ?= build/final_${target_suffix}.xclbin
+insts_target  ?= build/insts_${target_suffix}.txt
+
+ifndef PEANO_INSTALL_DIR
+$(error PEANO_INSTALL_DIR not set -- `source utils/env_setup.sh <install>` first.)
+endif
+
+include $(srcdir)/../../../makefile-common
+
+KERNEL_CC      = ${PEANO_INSTALL_DIR}/bin/clang++
+KERNEL_CFLAGS  = ${PEANOWRAP2P_FLAGS}
+KERNEL_DEFINES = -DDIM_M=${m} -DDIM_K=${k} -DDIM_N=${n}
+
+# kernels_dir hosts shared zero.cc include.
+kernels_dir := $(srcdir)/../../../../aie_kernels/aie2p
+
+aieargs = -M $M -K $K -N $N -m $m -k $k -n $n
+buffer_aloc_flag = basic-sequential
+trace_size ?= 0
+
+aiecc_peano_flags = --no-xchesscc --no-xbridge --peano ${PEANO_INSTALL_DIR}
+
+.PHONY: all clean
+
+all: ${xclbin_target}
+
+build/bitnet_gemm_512_${m}x${k}x${n}.o: ${srcdir}/bitnet_gemm_512.cc
+	mkdir -p ${@D}
+	cd ${@D} && ${KERNEL_CC} ${KERNEL_CFLAGS} ${KERNEL_DEFINES} \
+	    -I${kernels_dir} \
+	    -c $< -o ${@F}
+
+${mlir_target}: ${srcdir}/bitnet_gemm_iron_512.py
+	mkdir -p ${@D}
+	python3 $< ${aieargs} --trace_size 0 > $@
+
+${xclbin_target}: ${mlir_target} build/bitnet_gemm_512_${m}x${k}x${n}.o
+	mkdir -p ${@D}
+	cd ${@D} && aiecc \
+	    --alloc-scheme=${buffer_aloc_flag} \
+	    --aie-generate-xclbin \
+	    --no-compile-host \
+	    --xclbin-name=${@F} \
+	    ${aiecc_peano_flags} \
+	    --aie-generate-npu-insts \
+	    --npu-insts-name=${insts_target:build/%=%} \
+	    $(<:%=../%)
+
+clean:
+	rm -rf build/aie_${target_suffix}.mlir \
+	       build/aie_${target_suffix}.mlir.prj \
+	       build/final_${target_suffix}.xclbin \
+	       build/insts_${target_suffix}.txt \
+	       build/bitnet_gemm_512_${m}x${k}x${n}.o
